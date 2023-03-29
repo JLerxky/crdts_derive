@@ -58,8 +58,11 @@ fn impl_cmrdt_macro(input: syn::DeriveInput) -> TokenStream {
 
     let fields = list_fields(data);
 
-    let error_name = Ident::new(&(name.to_string() + "CrdtError"), Span::call_site());
-    let error_enum = build_error(&fields);
+    let m_error_name = Ident::new(&(name.to_string() + "CmRDTError"), Span::call_site());
+    let m_error_enum = build_m_error(&fields);
+
+    let v_error_name = Ident::new(&(name.to_string() + "CvRDTError"), Span::call_site());
+    let v_error_enum = build_v_error(&fields);
 
     let op_name = Ident::new(&(name.to_string() + "CrdtOp"), Span::call_site());
     let op_param = build_op(&fields);
@@ -67,29 +70,32 @@ fn impl_cmrdt_macro(input: syn::DeriveInput) -> TokenStream {
     let impl_apply = impl_apply(&fields);
     let impl_validate = impl_validate(&fields);
 
+    let impl_merge = impl_merge(&fields);
+    let impl_validate_merge = impl_validate_merge(&fields);
+
     quote! {
         #[derive(std::fmt::Debug, PartialEq, Eq)]
-        pub enum #error_name {
+        pub enum #m_error_name {
             NoneOp,
-            #error_enum
+            #m_error_enum
         }
 
-        impl std::fmt::Display for #error_name {
+        impl std::fmt::Display for #m_error_name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 std::fmt::Debug::fmt(&self, f)
             }
         }
 
-        impl std::error::Error for #error_name {}
+        impl std::error::Error for #m_error_name {}
 
         #[allow(clippy::type_complexity)]
         pub struct #op_name {
             #op_param
         }
 
-        impl CmRDT for #name {
+        impl crdts::CmRDT for #name {
             type Op = #op_name;
-            type Validation = #error_name;
+            type Validation = #m_error_name;
 
             fn apply(&mut self, op: Self::Op) {
                 #impl_apply
@@ -97,6 +103,32 @@ fn impl_cmrdt_macro(input: syn::DeriveInput) -> TokenStream {
 
             fn validate_op(&self, op: &Self::Op) -> Result<(), Self::Validation> {
                 #impl_validate
+            }
+        }
+
+        #[derive(std::fmt::Debug, PartialEq, Eq)]
+        pub enum #v_error_name {
+            #v_error_enum
+        }
+
+        impl std::fmt::Display for #v_error_name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                std::fmt::Debug::fmt(&self, f)
+            }
+        }
+
+        impl std::error::Error for #v_error_name {}
+
+        impl crdts::CvRDT for #name {
+            type Validation = #v_error_name;
+
+            fn validate_merge(&self, other: &Self) -> Result<(), Self::Validation> {
+                #impl_validate_merge
+                Ok(())
+            }
+
+            fn merge(&mut self, other: Self) {
+                #impl_merge
             }
         }
     }
@@ -114,13 +146,27 @@ fn list_fields(data: &Data) -> HashMap<String, Type> {
     field_list
 }
 
-fn build_error(fields: &HashMap<String, Type>) -> TokenStream {
+fn build_m_error(fields: &HashMap<String, Type>) -> TokenStream {
     let recurse = fields.iter().map(|f| {
         let pascal_name = f.0.to_case(Case::Pascal);
         let name = Ident::new(&pascal_name, Span::call_site());
         let ty = f.1;
         quote_spanned! { Span::call_site() =>
-            #name(<#ty as CmRDT>::Validation),
+            #name(<#ty as crdts::CmRDT>::Validation),
+        }
+    });
+    quote! {
+        #(#recurse)*
+    }
+}
+
+fn build_v_error(fields: &HashMap<String, Type>) -> TokenStream {
+    let recurse = fields.iter().map(|f| {
+        let pascal_name = f.0.to_case(Case::Pascal);
+        let name = Ident::new(&pascal_name, Span::call_site());
+        let ty = f.1;
+        quote_spanned! { Span::call_site() =>
+            #name(<#ty as crdts::CvRDT>::Validation),
         }
     });
     quote! {
@@ -137,13 +183,13 @@ fn build_op(fields: &HashMap<String, Type>) -> TokenStream {
             name = "dot".to_owned();
             let name = Ident::new(&name, Span::call_site());
             spans.push(quote_spanned! { Span::call_site() =>
-                #name: <#ty as CmRDT>::Op,
+                #name: <#ty as crdts::CmRDT>::Op,
             });
         } else {
             name += "_op";
             let name = Ident::new(&name, Span::call_site());
             spans.push(quote_spanned! { Span::call_site() =>
-                #name: Option<<#ty as CmRDT>::Op>,
+                #name: Option<<#ty as crdts::CmRDT>::Op>,
             });
         }
     }
@@ -229,6 +275,36 @@ fn impl_validate(fields: &HashMap<String, Type>) -> TokenStream {
                 return Ok(());
             }
         }
+    }
+}
+
+fn impl_merge(fields: &HashMap<String, Type>) -> TokenStream {
+    let apply = fields.keys().map(|f| {
+        let field = Ident::new(f, Span::call_site());
+        quote_spanned! { Span::call_site() =>
+            self.#field.merge(other.#field);
+        }
+    });
+
+    quote! {
+        #(#apply)*
+    }
+}
+
+fn impl_validate_merge(fields: &HashMap<String, Type>) -> TokenStream {
+    let apply = fields.keys().map(|f| {
+        let pascal_name = f.to_case(Case::Pascal);
+        let error_name = Ident::new(&pascal_name, Span::call_site());
+        let field = Ident::new(f, Span::call_site());
+        quote_spanned! { Span::call_site() =>
+            self.#field
+                .validate_merge(&other.#field)
+                .map_err(Self::Validation::#error_name)?;
+        }
+    });
+
+    quote! {
+        #(#apply)*
     }
 }
 

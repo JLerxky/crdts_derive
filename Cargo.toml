@@ -1,7 +1,7 @@
 [package]
 name = "crdts_derive"
 description = "CRDTs proc_macro"
-version = "7.3.2"
+version = "7.3.3"
 authors = ["JLer <jlerxky@live.com>"]
 license = "Apache-2.0"
 homepage = "https://github.com/JLerxky/crdts_derive"
