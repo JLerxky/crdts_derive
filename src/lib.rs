@@ -183,13 +183,13 @@ fn build_op(fields: &HashMap<String, Type>) -> TokenStream {
             name = "dot".to_owned();
             let name = Ident::new(&name, Span::call_site());
             spans.push(quote_spanned! { Span::call_site() =>
-                #name: <#ty as crdts::CmRDT>::Op,
+                pub #name: <#ty as crdts::CmRDT>::Op,
             });
         } else {
             name += "_op";
             let name = Ident::new(&name, Span::call_site());
             spans.push(quote_spanned! { Span::call_site() =>
-                #name: Option<<#ty as crdts::CmRDT>::Op>,
+                pub #name: Option<<#ty as crdts::CmRDT>::Op>,
             });
         }
     }
