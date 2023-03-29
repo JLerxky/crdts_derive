@@ -2,6 +2,11 @@
 
 [![crates.io](https://img.shields.io/crates/v/crdts_derive.svg)](https://crates.io/crates/crdts_derive)
 
+## TODO
+
+- [x] CmRDT
+- [ ] CvRDT
+
 ## Usage
 
 ### Add the dependency
