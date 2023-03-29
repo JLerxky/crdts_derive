@@ -28,7 +28,11 @@ pub struct Data {
     c: Orswot<Vec<u8>, u64>,
     d: GCounter<u64>,
 }
+```
 
+#### Use this struct
+
+```rust
 #[test]
 fn test() {
     use crdts::{CmRDT, CvRDT, Dot};
