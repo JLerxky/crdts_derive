@@ -6,15 +6,11 @@ use quote::{quote, quote_spanned};
 use syn::parse::{Parse, ParseStream, Parser, Result};
 use syn::{parse_macro_input, Data, DeriveInput, Fields, Type};
 
-struct Args {
-    pub actor_type: Type,
-}
+struct Args(pub Type);
 
 impl Parse for Args {
     fn parse(input: ParseStream) -> Result<Self> {
-        Ok(Args {
-            actor_type: input.parse()?,
-        })
+        Ok(Args(input.parse()?))
     }
 }
 
@@ -26,7 +22,7 @@ pub fn crdt(
     let mut ast = parse_macro_input!(input as DeriveInput);
     let args = parse_macro_input!(args as Args);
 
-    let v_clock_type = args.actor_type;
+    let v_clock_type = args.0;
 
     if let syn::Data::Struct(ref mut struct_data) = &mut ast.data {
         if let syn::Fields::Named(fields) = &mut struct_data.fields {
