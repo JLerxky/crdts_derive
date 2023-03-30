@@ -6,7 +6,7 @@
 
 ### Add the dependency
 
-Add the `crdts` and `crdts_derive` dependency to `Cargo.toml`:
+Add the [`crdts`](https://github.com/rust-crdt/rust-crdt) and `crdts_derive` dependency to `Cargo.toml`:
 
 ```toml
 [dependencies]
