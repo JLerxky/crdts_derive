@@ -4,7 +4,7 @@ use convert_case::{Case, Casing};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::parse::{Parse, ParseStream, Parser, Result};
-use syn::{parse_macro_input, Data, DeriveInput, Fields, Type};
+use syn::{parse_macro_input, Data, DataStruct, DeriveInput, Fields, Type};
 
 struct Args(Type);
 
@@ -138,79 +138,78 @@ fn impl_cmrdt_macro(input: syn::DeriveInput) -> TokenStream {
 }
 
 fn list_fields(data: &Data) -> HashMap<String, Type> {
-    let mut field_list = HashMap::new();
-    if let Data::Struct(ref data) = *data {
-        if let Fields::Named(ref fields) = data.fields {
-            for f in &fields.named {
-                field_list.insert(f.ident.clone().unwrap().to_string(), f.ty.clone());
-            }
-        }
+    if let Data::Struct(DataStruct {
+        fields: Fields::Named(fields),
+        ..
+    }) = data
+    {
+        fields
+            .named
+            .iter()
+            .map(|f| (f.ident.as_ref().unwrap().to_string(), f.ty.clone()))
+            .collect()
+    } else {
+        HashMap::new()
     }
-    field_list
 }
 
 fn build_m_error(fields: &HashMap<String, Type>) -> TokenStream {
-    let recurse = fields.iter().map(|f| {
-        let pascal_name = f.0.to_case(Case::Pascal);
-        let name = Ident::new(&pascal_name, Span::call_site());
-        let ty = f.1;
-        quote_spanned! { Span::call_site() =>
-            #name(<#ty as crdts::CmRDT>::Validation),
-        }
-    });
-    quote! {
-        #(#recurse)*
-    }
+    fields
+        .iter()
+        .map(|(field_name, field_type)| {
+            let pascal_name = field_name.to_case(Case::Pascal);
+            let name = Ident::new(&pascal_name, Span::call_site());
+            quote_spanned! { Span::call_site() =>
+                #name(<#field_type as crdts::CmRDT>::Validation),
+            }
+        })
+        .collect::<TokenStream>()
 }
 
 fn build_v_error(fields: &HashMap<String, Type>) -> TokenStream {
-    let recurse = fields.iter().map(|f| {
-        let pascal_name = f.0.to_case(Case::Pascal);
-        let name = Ident::new(&pascal_name, Span::call_site());
-        let ty = f.1;
-        quote_spanned! { Span::call_site() =>
-            #name(<#ty as crdts::CvRDT>::Validation),
-        }
-    });
-    quote! {
-        #(#recurse)*
-    }
+    fields
+        .iter()
+        .map(|(name, ty)| {
+            let pascal_name = name.to_case(Case::Pascal);
+            let name = Ident::new(&pascal_name, Span::call_site());
+            quote_spanned! { Span::call_site() =>
+                #name(<#ty as crdts::CvRDT>::Validation),
+            }
+        })
+        .collect::<TokenStream>()
 }
 
 fn build_op(fields: &HashMap<String, Type>) -> TokenStream {
-    let mut spans = vec![];
-    for f in fields {
-        let mut name = f.0.to_owned();
-        let ty = &f.1;
-        if name == "v_clock" {
-            name = "dot".to_owned();
-            let name = Ident::new(&name, Span::call_site());
-            spans.push(quote_spanned! { Span::call_site() =>
-                pub #name: <#ty as crdts::CmRDT>::Op,
-            });
+    let mut tokens = TokenStream::new();
+    for (name, ty) in fields {
+        let (name, is_vclock) = if name == "v_clock" {
+            (Ident::new("dot", Span::call_site()), true)
         } else {
-            name += "_op";
-            let name = Ident::new(&name, Span::call_site());
-            spans.push(quote_spanned! { Span::call_site() =>
-                pub #name: Option<<#ty as crdts::CmRDT>::Op>,
-            });
-        }
+            (
+                Ident::new(&format!("{}_op", name), Span::call_site()),
+                false,
+            )
+        };
+        let op_type = if is_vclock {
+            quote! {<#ty as crdts::CmRDT>::Op}
+        } else {
+            quote! {Option<<#ty as crdts::CmRDT>::Op>}
+        };
+        tokens.extend(quote_spanned! {Span::call_site() =>
+            pub #name: #op_type,
+        });
     }
-    quote! {
-        #(#spans)*
-    }
+    tokens
 }
 
 fn impl_apply(fields: &HashMap<String, Type>) -> TokenStream {
     let op_params = op_params(fields);
     let nones = count_none(fields);
 
-    let apply = fields.keys().map(|f| {
-        if f == "v_clock" {
-            return quote_spanned! { Span::call_site() => };
-        }
+    let apply = fields.keys().filter(|f| *f != "v_clock").map(|f| {
         let field = Ident::new(f, Span::call_site());
         let op = Ident::new(&(f.to_owned() + "_op"), Span::call_site());
+
         quote_spanned! { Span::call_site() =>
             if let Some(#op) = #op {
                 self.#field.apply(#op);
@@ -218,23 +217,14 @@ fn impl_apply(fields: &HashMap<String, Type>) -> TokenStream {
         }
     });
 
-    let apply = quote! {
-        #(#apply)*
-    };
-
     quote! {
-        let Self::Op {
-            dot,
-            #op_params
-        } = op;
+        let Self::Op { dot, #op_params } = op;
         if self.v_clock.get(&dot.actor) >= dot.counter {
             return;
         }
         match (#op_params) {
             (#nones) => return,
-            (#op_params) => {
-                #apply
-            }
+            (#op_params) => { #(#apply)* }
         }
         self.v_clock.apply(dot);
     }
@@ -244,10 +234,7 @@ fn impl_validate(fields: &HashMap<String, Type>) -> TokenStream {
     let op_params = op_params(fields);
     let nones = count_none(fields);
 
-    let validate = fields.keys().map(|f| {
-        if f == "v_clock" {
-            return quote_spanned! {Span::call_site()=>};
-        }
+    let validate = fields.keys().filter(|f| f != &"v_clock").map(|f| {
         let pascal_name = f.to_case(Case::Pascal);
         let error_name = Ident::new(&pascal_name, Span::call_site());
         let field = Ident::new(f, Span::call_site());
@@ -259,22 +246,16 @@ fn impl_validate(fields: &HashMap<String, Type>) -> TokenStream {
         }
     });
 
-    let validate = quote! {
-        #(#validate)*
-    };
-
     quote! {
         let Self::Op {
             dot,
             #op_params
         } = op;
-        self.v_clock
-            .validate_op(dot)
-            .map_err(Self::Validation::VClock)?;
+        self.v_clock.validate_op(dot).map_err(Self::Validation::VClock)?;
         match (#op_params) {
             (#nones) => return Err(Self::Validation::NoneOp),
             (#op_params) => {
-                #validate
+                #(#validate)*
                 return Ok(());
             }
         }
@@ -282,59 +263,47 @@ fn impl_validate(fields: &HashMap<String, Type>) -> TokenStream {
 }
 
 fn impl_merge(fields: &HashMap<String, Type>) -> TokenStream {
-    let apply = fields.keys().map(|f| {
-        let field = Ident::new(f, Span::call_site());
-        quote_spanned! { Span::call_site() =>
-            self.#field.merge(other.#field);
-        }
-    });
-
-    quote! {
-        #(#apply)*
-    }
+    fields
+        .keys()
+        .map(|f| {
+            let field = Ident::new(f, Span::call_site());
+            quote_spanned! {
+                Span::call_site() => self.#field.merge(other.#field);
+            }
+        })
+        .collect()
 }
 
 fn impl_validate_merge(fields: &HashMap<String, Type>) -> TokenStream {
-    let apply = fields.keys().map(|f| {
-        let pascal_name = f.to_case(Case::Pascal);
-        let error_name = Ident::new(&pascal_name, Span::call_site());
-        let field = Ident::new(f, Span::call_site());
-        quote_spanned! { Span::call_site() =>
-            self.#field
-                .validate_merge(&other.#field)
-                .map_err(Self::Validation::#error_name)?;
-        }
-    });
-
-    quote! {
-        #(#apply)*
-    }
+    fields
+        .keys()
+        .map(|field| {
+            let error_name = Ident::new(&field.to_case(Case::Pascal), Span::call_site());
+            let field = Ident::new(field, Span::call_site());
+            quote! {
+                self.#field.validate_merge(&other.#field)
+                    .map_err(Self::Validation::#error_name)?;
+            }
+        })
+        .collect()
 }
 
 fn count_none(fields: &HashMap<String, Type>) -> TokenStream {
-    let nones = fields.keys().filter_map(|f| {
-        if f != "v_clock" {
-            Some(Ident::new("None", Span::call_site()))
-        } else {
-            None
-        }
-    });
-    let nones = quote! {
-        #(#nones,)*
-    };
-    nones
+    fields
+        .keys()
+        .filter(|&f| f != "v_clock")
+        .map(|_| quote!(None,))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .collect::<TokenStream>()
 }
 
 fn op_params(fields: &HashMap<String, Type>) -> TokenStream {
-    let op_params = fields.keys().filter_map(|f| {
-        if f != "v_clock" {
-            Some(Ident::new(&(f.to_owned() + "_op"), Span::call_site()))
-        } else {
-            None
-        }
-    });
-    let op_params = quote! {
-        #(#op_params,)*
-    };
-    op_params
+    fields
+        .keys()
+        .filter(|f| *f != "v_clock")
+        .map(|f| format!("{}_op", f))
+        .map(|i| Ident::new(&i, Span::call_site()))
+        .map(|i| quote!(#i,))
+        .collect()
 }
