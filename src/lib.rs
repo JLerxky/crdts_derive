@@ -6,7 +6,7 @@ use quote::{quote, quote_spanned};
 use syn::parse::{Parse, ParseStream, Parser, Result};
 use syn::{parse_macro_input, Data, DeriveInput, Fields, Type};
 
-struct Args(pub Type);
+struct Args(Type);
 
 impl Parse for Args {
     fn parse(input: ParseStream) -> Result<Self> {
@@ -24,21 +24,28 @@ pub fn crdt(
 
     let v_clock_type = args.0;
 
-    if let syn::Data::Struct(ref mut struct_data) = &mut ast.data {
+    // If the struct has named fields, add a v_clock field to it
+    if let syn::Data::Struct(ref mut struct_data) = ast.data {
         if let syn::Fields::Named(fields) = &mut struct_data.fields {
             fields.named.push(
                 syn::Field::parse_named
                     .parse2(quote! { v_clock: crdts::VClock<#v_clock_type> })
                     .unwrap(),
             );
+        } else {
+            panic!("`crdt` can only be used on `struct`s that have named fields");
         }
+    } else {
+        panic!("`crdt` can only be used on `struct`s");
     }
 
-    quote! {
+    // add `CRDT` derive for the struct
+    let gen = quote! {
         #[derive(crdts_derive::CRDT)]
         #ast
-    }
-    .into()
+    };
+
+    gen.into()
 }
 
 #[proc_macro_derive(CRDT)]
