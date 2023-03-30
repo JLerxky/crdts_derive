@@ -49,13 +49,13 @@ pub fn crdt(
 }
 
 #[proc_macro_derive(CRDT)]
-pub fn cmrdt_macro_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn crdt_macro_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse(input).unwrap();
-    let expanded = impl_cmrdt_macro(input);
+    let expanded = impl_crdt_macro(input);
     proc_macro::TokenStream::from(expanded)
 }
 
-fn impl_cmrdt_macro(input: syn::DeriveInput) -> TokenStream {
+fn impl_crdt_macro(input: syn::DeriveInput) -> TokenStream {
     let name = &input.ident;
     let data = &input.data;
 
