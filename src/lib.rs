@@ -92,6 +92,7 @@ fn impl_crdt_macro(input: syn::DeriveInput) -> TokenStream {
         impl std::error::Error for #m_error_name {}
 
         #[allow(clippy::type_complexity)]
+        #[derive(std::fmt::Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub struct #op_name {
             #op_param
         }

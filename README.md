@@ -6,12 +6,13 @@
 
 ### Add the dependency
 
-Add the [`crdts`](https://github.com/rust-crdt/rust-crdt) and `crdts_derive` dependency to `Cargo.toml`:
+Add the [`crdts`](https://github.com/rust-crdt/rust-crdt), `crdts_derive` and `serde` dependency to `Cargo.toml`:
 
 ```toml
 [dependencies]
 crdts = "7.3"
 crdts_derive = "7.3"
+serde = { version = "1.0", features = [ "derive" ] }
 ```
 
 ### Custom CRDT struct
@@ -19,9 +20,10 @@ crdts_derive = "7.3"
 ```rust
 use crdts::{GCounter, Map, Orswot};
 use crdts_derive::crdt;
+use serde::{Deserialize, Serialize};
 
 #[crdt(u64)]
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct Data {
     a: Orswot<String, String>,
     b: Map<u64, Orswot<Vec<u8>, u64>, u64>,
