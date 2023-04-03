@@ -8,6 +8,8 @@
 
 Add the [`crdts`](https://github.com/rust-crdt/rust-crdt), `crdts_derive` and `serde` dependency to `Cargo.toml`:
 
+- Serde is needed here in order to add serialization to the generated Op, and you can use [`crdts_macro`](https://crates.io/crates/crdts_macro) instead to simplify this step
+
 ```toml
 [dependencies]
 crdts = "7.3"
